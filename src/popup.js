@@ -11,16 +11,25 @@ let albumTitle = '';
 document.addEventListener('DOMContentLoaded', () => {
   const button = document.getElementById('downloadAblum');
   button.addEventListener('click', () => {
-    logMessage('下载按钮被点击了!');
+    const input = document.getElementById('maxCount');
+    const rawMaxCount = input.value.trim();
+    const maxCount = rawMaxCount === '' ? null : Number(rawMaxCount);
+    if (maxCount !== null && (!Number.isSafeInteger(maxCount) || maxCount < 1)) {
+      showStatus('数量无效', '请输入大于 0 的整数，或留空下载全部照片。');
+      input.focus();
+      return;
+    }
+
+    updateButtonState(true);
+    showStatus('正在连接相册', '正在读取当前 QQ 空间页面的相册信息…', false);
 
     // 从 chrome.storage 获取 URL
     chrome.storage.local.get(['albumUrl'], (result) => {
       const albumUrl = result.albumUrl;
       if (albumUrl) {
-        logMessage('chrome.storage 获取的 URL：', albumUrl);
-        updateButtonState(true);
-        downloadAlbumData(albumUrl); // 使用获取到的 URL
+        downloadAlbumData(albumUrl, maxCount).catch(handleDownloadError);
       } else {
+        updateButtonState(false);
         showStatus('尚未选择相册', '请先在 QQ 空间打开需要下载的相册。');
       }
     });
@@ -32,16 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
  * @param {*} albumUrl
  * @returns
  */
-async function downloadAlbumData(albumUrl) {
+async function downloadAlbumData(albumUrl, maxCount) {
   if (!albumUrl) {
     updateButtonState(false);
     showStatus('尚未选择相册', '请先在 QQ 空间打开需要下载的相册。');
     return;
   }
-
-  // 获取用户设置的最大下载数量
-  const maxCountInput = document.getElementById('maxCount');
-  const maxCount = maxCountInput.value ? parseInt(maxCountInput.value, 10) : null;
 
   const downloadBox = document.getElementById('downloadBox');
   downloadBox.style.display = 'block'; // 显示下载盒子
@@ -60,6 +65,12 @@ async function downloadAlbumData(albumUrl) {
     shootTime: photo.shootTime,
     shoottime: photo.shoottime,
   }));
+
+  if (resultArray.length === 0) {
+    updateButtonState(false);
+    showStatus('相册没有照片', '这个相册没有可下载的照片。');
+    return;
+  }
 
   downloadPhotos(resultArray);
 }
@@ -84,6 +95,7 @@ async function getAlbumPhotoList(url, maxCount = null) {
   logMessage('计划下载数量：', actualCount);
 
   let photoList = photoData.photoList || [];
+  document.getElementById('statusMessage').textContent = `正在读取照片列表… 0 / ${actualCount} 张`;
 
   // 如果已获取数量不足，继续分页获取
   while (photoList.length < actualCount) {
@@ -92,6 +104,7 @@ async function getAlbumPhotoList(url, maxCount = null) {
     const photoData = await fetchPhotoList(nextPageUrl);
     const nextPagePhotos = photoData.photoList;
     photoList = photoList.concat(nextPagePhotos);
+    document.getElementById('statusMessage').textContent = `正在读取照片列表… ${Math.min(photoList.length, actualCount)} / ${actualCount} 张`;
 
     // 如果返回的照片数量少于请求的数量，说明已经没有更多照片了
     if (nextPagePhotos.length < 500) {
@@ -115,11 +128,20 @@ async function fetchPhotoList(url) {
     method: 'GET',
     credentials: 'include', // 这会发送包含cookie的请求
   });
+  if (!response.ok) {
+    throw new Error(`相册接口返回错误（HTTP ${response.status}），请刷新 QQ 空间后重试。`);
+  }
   const data = await response.text();
   const start = data.indexOf('(') + 1;
   const end = data.lastIndexOf(')');
+  if (start === 0 || end < start) {
+    throw new Error('没有读懂 QQ 空间返回的数据，请刷新相册后重试。');
+  }
   const jsonData = JSON.parse(data.slice(start, end));
   const albumData = jsonData.data;
+  if (!albumData?.topic?.name || !Array.isArray(albumData.photoList)) {
+    throw new Error('无法读取这个相册，可能尚未登录或相册暂不受支持。');
+  }
   logMessage('获取到的相册数据：', jsonData);
 
   // 展示正在下载的相册
@@ -216,7 +238,21 @@ function downloadPhotos(list) {
       downloadBox.classList.add('is-complete');
       updateButtonState(false);
       worker.terminate(); // 任务完成后终止 Worker
+    } else if (type === 'error') {
+      worker.terminate();
+      updateButtonState(false);
+      showStatus('下载失败', data || '下载照片时发生错误，请检查网络后重试。');
     }
+  };
+  worker.onerror = () => {
+    worker.terminate();
+    updateButtonState(false);
+    showStatus('下载失败', '下载过程中发生错误，请检查网络或刷新 QQ 空间后重试。');
+  };
+  worker.onmessageerror = () => {
+    worker.terminate();
+    updateButtonState(false);
+    showStatus('下载失败', '收到无法处理的数据，请重新打开相册后重试。');
   };
 }
 
@@ -232,16 +268,21 @@ function buildCompletionMessage(metadataSummary) {
   return lines.join('\n');
 }
 
-function showStatus(title, message) {
+function showStatus(title, message, warning = true) {
   const box = document.getElementById('downloadBox');
   box.style.display = 'block';
+  box.classList.toggle('is-warning', warning);
   box.classList.remove('is-complete');
-  box.classList.add('is-warning');
   document.getElementById('statusTitle').textContent = title;
   document.getElementById('albumTitle').textContent = '';
   document.getElementById('statusMessage').textContent = message;
   document.getElementById('progressText').textContent = '';
   document.getElementById('progressBar').value = 0;
+}
+
+function handleDownloadError(error) {
+  updateButtonState(false);
+  showStatus('下载失败', error instanceof Error ? error.message : '下载失败，请检查网络后重试。');
 }
 
 /**
@@ -251,6 +292,7 @@ function showStatus(title, message) {
 function updateButtonState(isDisabled) {
   const button = document.getElementById('downloadAblum');
   button.disabled = isDisabled;
+  button.querySelector('span').textContent = isDisabled ? '正在准备下载…' : '下载相册';
 }
 
 /**

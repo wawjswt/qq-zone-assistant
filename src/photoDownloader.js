@@ -139,54 +139,62 @@ function embedUploadTime(bytes, date, selectedTime = null) {
 }
 
 self.onmessage = async (event) => {
-  const list = event.data;
-  const zip = new JSZip();
+  try {
+    const list = event.data;
+    const zip = new JSZip();
 
-  const totalImages = list.length;
-  const sequenceWidth = Math.max(4, String(totalImages).length);
-  let downloadedImages = 0;
-  const metadataSummary = { embedded: 0, sidecar: 0, missing: 0, originalTime: 0, uploadTime: 0 };
+    const totalImages = list.length;
+    const sequenceWidth = Math.max(4, String(totalImages).length);
+    let downloadedImages = 0;
+    const metadataSummary = { embedded: 0, sidecar: 0, missing: 0, originalTime: 0, uploadTime: 0 };
 
-  for (const photo of list) {
-    const response = await fetch(photo.url);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    // 每张照片使用唯一序号，避免同名覆盖，并保持相册顺序。
-    const sequence = String(downloadedImages + 1).padStart(sequenceWidth, '0');
-    const safeName = String(photo.name ?? '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '未命名';
-    const uploadDate = getUploadDate(photo.uploadtime);
-    const selectedTime = await selectPhotoTime(bytes, photo);
-    const image = embedUploadTime(bytes, uploadDate, selectedTime);
-    const filename = `${sequence}_${safeName}.${image.extension}`;
-    const options = selectedTime ? { date: selectedTime.date } : {};
-    if (selectedTime) {
-      if (selectedTime.source === 'QQ空间:uploadtime') metadataSummary.uploadTime++;
-      else metadataSummary.originalTime++;
+    for (const photo of list) {
+      const response = await fetch(photo.url);
+      if (!response.ok) throw new Error(`第 ${downloadedImages + 1} 张照片下载失败（HTTP ${response.status}）`);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      // 每张照片使用唯一序号，避免同名覆盖，并保持相册顺序。
+      const sequence = String(downloadedImages + 1).padStart(sequenceWidth, '0');
+      const safeName = String(photo.name ?? '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '未命名';
+      const uploadDate = getUploadDate(photo.uploadtime);
+      const selectedTime = await selectPhotoTime(bytes, photo);
+      const image = embedUploadTime(bytes, uploadDate, selectedTime);
+      const filename = `${sequence}_${safeName}.${image.extension}`;
+      const options = selectedTime ? { date: selectedTime.date } : {};
+      if (selectedTime) {
+        if (selectedTime.source === 'QQ空间:uploadtime') metadataSummary.uploadTime++;
+        else metadataSummary.originalTime++;
+      }
+      zip.file(filename, image.bytes, options);
+      if (image.embedded) {
+        metadataSummary.embedded++;
+      } else if (selectedTime) {
+        // 尚不支持的格式保留原文件，并显式保存旁车信息，不能冒充已嵌入成功。
+        zip.file(`${filename}.metadata.json`, JSON.stringify({
+          file: filename,
+          ...photoTimeMetadata(uploadDate, selectedTime),
+          source: 'QQ空间',
+          note: '此格式未内嵌时间信息，请将本文件与图片一同保存。',
+        }, null, 2), options);
+        metadataSummary.sidecar++;
+      } else {
+        metadataSummary.missing++;
+      }
+      downloadedImages++;
+
+      // 通知主线程进度
+      self.postMessage({
+        type: 'progress',
+        data: (downloadedImages / totalImages) * 100,
+      });
     }
-    zip.file(filename, image.bytes, options);
-    if (image.embedded) {
-      metadataSummary.embedded++;
-    } else if (selectedTime) {
-      // 尚不支持的格式保留原文件，并显式保存旁车信息，不能冒充已嵌入成功。
-      zip.file(`${filename}.metadata.json`, JSON.stringify({
-        file: filename,
-        ...photoTimeMetadata(uploadDate, selectedTime),
-        source: 'QQ空间',
-        note: '此格式未内嵌时间信息，请将本文件与图片一同保存。',
-      }, null, 2), options);
-      metadataSummary.sidecar++;
-    } else {
-      metadataSummary.missing++;
-    }
-    downloadedImages++;
 
-    // 通知主线程进度
+    // 生成 ZIP 文件
+    const zipContent = await zip.generateAsync({ type: 'blob' });
+    self.postMessage({ type: 'complete', data: { zipContent, metadataSummary } });
+  } catch (error) {
     self.postMessage({
-      type: 'progress',
-      data: (downloadedImages / totalImages) * 100,
+      type: 'error',
+      data: error instanceof Error ? `下载失败：${error.message}` : '下载失败，请检查网络后重试。',
     });
   }
-
-  // 生成 ZIP 文件
-  const zipContent = await zip.generateAsync({ type: 'blob' });
-  self.postMessage({ type: 'complete', data: { zipContent, metadataSummary } });
 };
