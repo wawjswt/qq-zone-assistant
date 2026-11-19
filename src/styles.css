@@ -155,11 +155,16 @@ h1 {
   white-space: nowrap;
 }
 
-.album-note-copy > span:last-child {
-  color: #eff7ff;
-  font-size: 10px;
-  line-height: 1.45;
+.album-count {
+  color: #fff0a1;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
 }
+
+.album-note.is-loading .album-count { color: #edf7ff; font-weight: 500; }
+.album-note.is-error .album-count { color: #ffe7a0; }
+.album-note.is-empty .album-count { color: #edf7ff; font-weight: 500; }
 
 .album-spark {
   align-self: flex-start;
@@ -268,7 +273,6 @@ label { color: #2b3d53; font-size: 12px; font-weight: 700; }
 .status-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #f1f7fc; font-size: 11px; }
 .status-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 #statusTitle { color: #fff; font-size: 12px; font-weight: 700; }
-#albumTitle { overflow: hidden; color: #eaf4fc; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 #progressText { color: #fff2ae; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 progress {
@@ -290,7 +294,6 @@ progress::-webkit-progress-value { border-radius: 99px; background: var(--qzone-
 .download-status.is-complete { color: #3f654b; border-color: #d0e9d7; background: #f1faf3; }
 .download-status.is-complete #statusTitle,
 .download-status.is-complete #progressText { color: #2f7548; }
-.download-status.is-complete #albumTitle,
 .download-status.is-complete .status-message { color: #648171; }
 .download-status.is-complete progress,
 .download-status.is-complete progress::-webkit-progress-bar { background: #dceee1; }
@@ -299,7 +302,6 @@ progress::-webkit-progress-value { border-radius: 99px; background: var(--qzone-
 .download-status.is-warning { color: #725e34; border-color: #efdcaa; background: #fff8e3; }
 .download-status.is-warning #statusTitle,
 .download-status.is-warning #progressText { color: #8b6615; }
-.download-status.is-warning #albumTitle,
 .download-status.is-warning .status-message { color: #766646; }
 .download-status.is-warning progress,
 .download-status.is-warning progress::-webkit-progress-bar { background: #f3e6c2; }

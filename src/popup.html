@@ -22,14 +22,14 @@
       </a>
     </header>
 
-    <section class="album-note" aria-label="相册保存方式">
+    <section class="album-note is-loading" aria-label="当前相册信息" aria-live="polite">
       <div class="album-mark" aria-hidden="true">
         <svg viewBox="0 0 48 48" fill="none"><rect x="8" y="9" width="27" height="31" rx="4" transform="rotate(-8 8 9)" stroke="currentColor" stroke-width="2.3"/><rect x="15" y="8" width="27" height="31" rx="4" stroke="currentColor" stroke-width="2.3"/><circle cx="33" cy="17" r="2.5" fill="currentColor"/><path d="m18 32 6.2-6.2a1.8 1.8 0 0 1 2.5 0l2.3 2.3 2.1-2.1a1.8 1.8 0 0 1 2.5 0L39 31" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
       <div class="album-note-copy">
-        <span class="eyebrow">QQ ZONE · PHOTO ALBUM</span>
-        <strong>打开相册后自动识别</strong>
-        <span>压缩包会使用相册名称命名</span>
+        <span class="eyebrow">当前相册</span>
+        <strong id="albumTitle">正在识别相册…</strong>
+        <span id="albumCount" class="album-count">正在读取图片数量</span>
       </div>
       <span class="album-spark" aria-hidden="true">✦</span>
     </section>
@@ -53,7 +53,6 @@
       <div class="status-heading">
         <div class="status-copy">
           <span id="statusTitle">正在下载</span>
-          <span id="albumTitle"></span>
         </div>
         <span id="progressText">0%</span>
       </div>

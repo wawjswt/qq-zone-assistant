@@ -23,18 +23,78 @@ document.addEventListener('DOMContentLoaded', () => {
     updateButtonState(true);
     showStatus('正在连接相册', '正在读取当前 QQ 空间页面的相册信息…', false);
 
-    // 从 chrome.storage 获取 URL
-    chrome.storage.local.get(['albumUrl'], (result) => {
-      const albumUrl = result.albumUrl;
-      if (albumUrl) {
-        downloadAlbumData(albumUrl, maxCount).catch(handleDownloadError);
-      } else {
-        updateButtonState(false);
-        showStatus('尚未选择相册', '请先在 QQ 空间打开需要下载的相册。');
+    getCurrentAlbumUrl()
+      .then((albumUrl) => {
+        if (albumUrl) {
+          downloadAlbumData(albumUrl, maxCount).catch(handleDownloadError);
+        } else {
+          updateButtonState(false);
+          showStatus('尚未识别当前相册', '请刷新当前 QQ 空间相册页面后重试。');
+        }
+      })
+      .catch(handleDownloadError);
+  });
+
+  loadAlbumOverview();
+});
+
+async function loadAlbumOverview() {
+  setAlbumOverview('正在识别相册…', '正在读取图片数量', 'loading');
+
+  try {
+    const albumUrl = await getCurrentAlbumUrl();
+    if (!albumUrl) {
+      setAlbumOverview('未识别到当前相册', '请在当前标签页打开 QQ 空间相册', 'empty');
+      return;
+    }
+
+    // 只读取一张照片的信息，用接口返回的总数快速填充弹窗概览。
+    const photoData = await fetchPhotoList(buildFetchUrl(albumUrl, 0, 1));
+    if (!Number.isSafeInteger(photoData.totalInAlbum) || photoData.totalInAlbum < 0) {
+      throw new Error('QQ 空间没有返回照片总数。');
+    }
+  } catch (error) {
+    console.error('相册识别失败：', error);
+    setAlbumOverview('相册识别失败', '请刷新 QQ 空间相册页面后重试', 'error');
+  }
+}
+
+function getCurrentAlbumUrl() {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error('无法读取当前标签页，请重新打开扩展。'));
+        return;
       }
+
+      const activeTabId = tabs?.[0]?.id;
+      chrome.storage.local.get(['albumUrl', 'albumTabId'], (result) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error('无法读取相册信息，请重新打开扩展。'));
+          return;
+        }
+
+        const albumUrl = result?.albumUrl;
+        const albumTabId = result?.albumTabId;
+        // 来源标签页不匹配或记录较旧时不展示，避免把上次相册误当作当前相册。
+        if (!albumUrl || !Number.isInteger(albumTabId) || albumTabId !== activeTabId) {
+          resolve('');
+          return;
+        }
+
+        resolve(albumUrl);
+      });
     });
   });
-});
+}
+
+function setAlbumOverview(title, countText, state = 'ready') {
+  const card = document.querySelector('.album-note');
+  card.classList.remove('is-loading', 'is-error', 'is-empty');
+  if (state !== 'ready') card.classList.add(`is-${state}`);
+  document.getElementById('albumTitle').textContent = title;
+  document.getElementById('albumCount').textContent = countText;
+}
 
 /**
  * 下载相册数据
@@ -88,6 +148,9 @@ async function getAlbumPhotoList(url, maxCount = null) {
   // 获取初始的照片列表
   const photoData = await fetchPhotoList(url);
   const totalInAlbum = photoData.totalInAlbum;
+  if (!Number.isSafeInteger(totalInAlbum) || totalInAlbum < 0) {
+    throw new Error('无法读取相册照片总数，请刷新 QQ 空间后重试。');
+  }
   logMessage('相册照片总数：', totalInAlbum);
 
   // 确定实际需要获取的数量
@@ -139,19 +202,27 @@ async function fetchPhotoList(url) {
   }
   const jsonData = JSON.parse(data.slice(start, end));
   const albumData = jsonData.data;
-  if (!albumData?.topic?.name || !Array.isArray(albumData.photoList)) {
+  const rawTotalInAlbum = albumData?.totalInAlbum;
+  const totalInAlbum = rawTotalInAlbum == null || rawTotalInAlbum === '' ? null : Number(rawTotalInAlbum);
+  if (
+    !albumData?.topic?.name ||
+    !Array.isArray(albumData.photoList) ||
+    (totalInAlbum !== null && (!Number.isSafeInteger(totalInAlbum) || totalInAlbum < 0))
+  ) {
     throw new Error('无法读取这个相册，可能尚未登录或相册暂不受支持。');
   }
   logMessage('获取到的相册数据：', jsonData);
 
-  // 展示正在下载的相册
+  // 总数存在时更新弹窗概览；分页响应缺少总数时保留已识别的数量。
   albumTitle = albumData.topic.name;
-  document.getElementById('albumTitle').textContent = albumTitle; // 设置相册标题
+  if (totalInAlbum !== null) {
+    setAlbumOverview(albumTitle, `已识别 ${totalInAlbum} 张照片`);
+  }
 
   // 返回照片列表和总数
   return {
     photoList: albumData.photoList,
-    totalInAlbum: albumData.totalInAlbum,
+    totalInAlbum,
   };
 }
 
@@ -274,7 +345,6 @@ function showStatus(title, message, warning = true) {
   box.classList.toggle('is-warning', warning);
   box.classList.remove('is-complete');
   document.getElementById('statusTitle').textContent = title;
-  document.getElementById('albumTitle').textContent = '';
   document.getElementById('statusMessage').textContent = message;
   document.getElementById('progressText').textContent = '';
   document.getElementById('progressBar').value = 0;
