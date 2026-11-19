@@ -51,6 +51,10 @@ async function downloadAlbumData(albumUrl) {
   const resultArray = photoList.map((photo) => ({
     name: photo.name,
     url: photo.url,
+    uploadtime: photo.uploadtime,
+    rawshoottime: photo.rawshoottime,
+    shootTime: photo.shootTime,
+    shoottime: photo.shoottime,
   }));
 
   downloadPhotos(resultArray);
@@ -165,6 +169,15 @@ function buildFetchUrl(albumUrl, pageStart = 0, pageNum = 500) {
  * @param {*} list
  */
 function downloadPhotos(list) {
+  // 开始下载时固定当前相册名称，避免后续状态变化影响文件名。
+  let safeAlbumTitle = String(albumTitle ?? '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+    .trim()
+    .replace(/[. ]+$/g, '-') || '相册';
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safeAlbumTitle)) {
+    safeAlbumTitle = `-${safeAlbumTitle}`;
+  }
+  const zipFilename = `${safeAlbumTitle}.zip`;
   const progressBar = document.getElementById('progressBar');
   const downloadBox = document.getElementById('downloadBox');
   progressBar.value = 0; // 初始化进度条
@@ -182,10 +195,10 @@ function downloadPhotos(list) {
       progressBar.value = data; // 更新进度条
     } else if (type === 'complete') {
       // 下载完成，生成 ZIP 文件
-      const { zipContent } = data;
+      const { zipContent, metadataSummary } = data;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(zipContent);
-      link.download = 'photos.zip'; // 设置下载文件名
+      link.download = zipFilename;
       document.body.appendChild(link);
       link.click(); // 触发下载
       document.body.removeChild(link);
@@ -193,7 +206,14 @@ function downloadPhotos(list) {
       setTimeout(() => {
         downloadBox.style.display = 'none'; // 隐藏进度条
         updateButtonState(false);
-        alert('下载完成');
+        let message = '下载完成';
+        if (metadataSummary) {
+          message += `\n${metadataSummary.originalTime} 张使用原始元数据时间，${metadataSummary.uploadTime} 张回退使用上传时间。`;
+          message += `\n已将时间信息嵌入 ${metadataSummary.embedded} 张图片。`;
+          if (metadataSummary.sidecar) message += `\n${metadataSummary.sidecar} 张图片的格式暂不支持内嵌，时间信息保存在同名 .metadata.json 文件中，请一起保留。`;
+          if (metadataSummary.missing) message += `\n${metadataSummary.missing} 张图片缺少有效的元数据时间和上传时间，未写入时间信息。`;
+        }
+        alert(message);
       }, 2000);
 
       worker.terminate(); // 任务完成后终止 Worker
