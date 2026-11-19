@@ -27,10 +27,10 @@
     <section class="settings" aria-label="下载设置">
       <div class="label-row"><label for="maxCount">最大下载数量</label><span class="optional">可选</span></div>
       <div class="input-wrap">
-        <input type="number" id="maxCount" min="1" value="500" placeholder="全部照片" aria-describedby="countHint">
+        <input type="number" id="maxCount" min="1" placeholder="不限制" aria-describedby="countHint">
         <span aria-hidden="true">张</span>
       </div>
-      <p class="hint" id="countHint">留空则下载相册中的全部照片</p>
+      <p class="hint" id="countHint">留空即可下载全部照片</p>
     </section>
 
     <button id="downloadAblum" type="button">
@@ -39,8 +39,15 @@
     </button>
 
     <div id="downloadBox" class="download-status" style="display: none;" aria-live="polite">
-      <div class="status-heading"><span>正在下载</span><span id="albumTitle"></span></div>
+      <div class="status-heading">
+        <div class="status-copy">
+          <span id="statusTitle">正在下载</span>
+          <span id="albumTitle"></span>
+        </div>
+        <span id="progressText">0%</span>
+      </div>
       <progress id="progressBar" value="0" max="100" aria-label="下载进度"></progress>
+      <p id="statusMessage" class="status-message"></p>
     </div>
 
     <footer><span class="footer-dot" aria-hidden="true"></span>请先在 QQ 空间打开需要下载的相册</footer>

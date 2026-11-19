@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateButtonState(true);
         downloadAlbumData(albumUrl); // 使用获取到的 URL
       } else {
-        alert('没有获取到 albumUrl');
+        showStatus('尚未选择相册', '请先在 QQ 空间打开需要下载的相册。');
       }
     });
   });
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function downloadAlbumData(albumUrl) {
   if (!albumUrl) {
     updateButtonState(false);
-    alert('没有获取到 albumUrl');
+    showStatus('尚未选择相册', '请先在 QQ 空间打开需要下载的相册。');
     return;
   }
 
@@ -45,6 +45,10 @@ async function downloadAlbumData(albumUrl) {
 
   const downloadBox = document.getElementById('downloadBox');
   downloadBox.style.display = 'block'; // 显示下载盒子
+  downloadBox.classList.remove('is-complete', 'is-warning');
+  document.getElementById('statusTitle').textContent = '正在读取相册';
+  document.getElementById('statusMessage').textContent = '';
+  document.getElementById('progressText').textContent = '…';
 
   const photoList = await getAlbumPhotoList(albumUrl, maxCount);
 
@@ -181,6 +185,8 @@ function downloadPhotos(list) {
   const progressBar = document.getElementById('progressBar');
   const downloadBox = document.getElementById('downloadBox');
   progressBar.value = 0; // 初始化进度条
+  document.getElementById('progressText').textContent = '0%';
+  document.getElementById('statusTitle').textContent = '正在打包照片';
 
   const worker = new Worker('photoDownloader.js'); // 引入 Web Worker
 
@@ -193,6 +199,7 @@ function downloadPhotos(list) {
 
     if (type === 'progress') {
       progressBar.value = data; // 更新进度条
+      document.getElementById('progressText').textContent = `${Math.round(data)}%`;
     } else if (type === 'complete') {
       // 下载完成，生成 ZIP 文件
       const { zipContent, metadataSummary } = data;
@@ -203,22 +210,38 @@ function downloadPhotos(list) {
       link.click(); // 触发下载
       document.body.removeChild(link);
 
-      setTimeout(() => {
-        downloadBox.style.display = 'none'; // 隐藏进度条
-        updateButtonState(false);
-        let message = '下载完成';
-        if (metadataSummary) {
-          message += `\n${metadataSummary.originalTime} 张使用原始元数据时间，${metadataSummary.uploadTime} 张回退使用上传时间。`;
-          message += `\n已将时间信息嵌入 ${metadataSummary.embedded} 张图片。`;
-          if (metadataSummary.sidecar) message += `\n${metadataSummary.sidecar} 张图片的格式暂不支持内嵌，时间信息保存在同名 .metadata.json 文件中，请一起保留。`;
-          if (metadataSummary.missing) message += `\n${metadataSummary.missing} 张图片缺少有效的元数据时间和上传时间，未写入时间信息。`;
-        }
-        alert(message);
-      }, 2000);
-
+      document.getElementById('statusTitle').textContent = '下载完成';
+      document.getElementById('statusMessage').textContent = buildCompletionMessage(metadataSummary);
+      document.getElementById('progressText').textContent = '完成';
+      downloadBox.classList.add('is-complete');
+      updateButtonState(false);
       worker.terminate(); // 任务完成后终止 Worker
     }
   };
+}
+
+function buildCompletionMessage(metadataSummary) {
+  if (!metadataSummary) return '相册压缩包已开始下载。';
+  const lines = [
+    `相册压缩包已开始下载。`,
+    `${metadataSummary.originalTime} 张使用照片原始时间，${metadataSummary.uploadTime} 张使用上传时间。`,
+    `时间信息已写入 ${metadataSummary.embedded} 张图片。`,
+  ];
+  if (metadataSummary.sidecar) lines.push(`${metadataSummary.sidecar} 张照片的时间信息保存在同名 .metadata.json 文件中。`);
+  if (metadataSummary.missing) lines.push(`${metadataSummary.missing} 张照片没有可用时间信息。`);
+  return lines.join('\n');
+}
+
+function showStatus(title, message) {
+  const box = document.getElementById('downloadBox');
+  box.style.display = 'block';
+  box.classList.remove('is-complete');
+  box.classList.add('is-warning');
+  document.getElementById('statusTitle').textContent = title;
+  document.getElementById('albumTitle').textContent = '';
+  document.getElementById('statusMessage').textContent = message;
+  document.getElementById('progressText').textContent = '';
+  document.getElementById('progressBar').value = 0;
 }
 
 /**
